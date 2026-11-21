@@ -1,0 +1,235 @@
+# 总述
+1. 审计任务页 (scan.html + app.js → scan-page.js) - 文件上传、FileReader、ES6模块、localStorage、scan.js对接
+2. 审计报告页 (report.html + report-app.js) - 多区块渲染、打印支持、demo JSON fallback
+3. 仪表盘 (index.html + dashboard-app.js) - Chart.js饼图、实例复用、数字卡片
+4. 安全基线库 (baseline.html + baseline-app.js) - fetch API、JSON加载、搜索过滤、错误降级
+5. 队友后端对接 - Flask、跨域、API请求封装、认证、后端状态检测
+6. Git团队协作 - add/commit/pull rebase/push、冲突解决、网络问题
+
+让我整理成几个部分：
+1. 📚 知识点详解（按类别）
+2. ✅ 我学会了什么
+3. 🎯 项目整体架构
+4. 📝 学习周报（错题本 + 重点）
+
+# 🎓 安全审计模拟项目 · 完整学习总结
+
+---
+
+## 📚 第一部分：知识点详解
+
+### 一、前端基础（ES6 + DOM）
+
+| 知识点 | 是什么 | 你在哪用的 |
+|--------|--------|-----------|
+| **ES6 Module** | `import` / `export` 模块化，让 JS 能拆文件互不污染 | `app.js` 引入 `scan.js`，队友的 `scan-page.js` 引入所有 api 模块 |
+| **`<script type="module">`** | 用了 import/export 就必须加这个属性，否则浏览器报错 | scan.html / baseline.html 等所有页面 |
+| **DOMContentLoaded** | 页面元素加载完才执行 JS，防止"元素还没出现就绑事件" | report-app.js 用它包裹所有初始化代码 |
+| **模板字符串** | 反引号 `` `...` `` 里可以直接 `${变量}`，比 `+` 拼接优雅 | 所有渲染 HTML 表格的地方 |
+| **`addEventListener`** | 给按钮绑点击事件、给 input 绑 change 事件 | scan.html 的上传按钮、拖拽事件 |
+
+**🔑 核心原理**：浏览器解析 HTML 是从上到下的。如果 `<script>` 放在 `<body>` 底部，页面元素已经加载完了，所以不需要 DOMContentLoaded。如果放 `<head>` 里，就要用它等元素就绪。
+
+---
+
+### 二、数据存储与跨页面传递
+
+| 知识点 | 是什么 | 你在哪用的 |
+|--------|--------|-----------|
+| **localStorage** | 浏览器本地存储，键值对，关掉浏览器数据还在 | 扫描完存 `scanResult`，报告页和仪表盘读这份数据 |
+| **JSON.stringify / JSON.parse** | 对象→字符串 / 字符串→对象，localStorage 只能存字符串 | 存结果前 stringify，读出来后 parse |
+| **事件通信** | `window.dispatchEvent(new CustomEvent('scan:complete'))` | scan 页扫描完发事件，dashboard 页监听刷新饼图 |
+| **队友 Storage 封装** | `window.SapStorage` 带 `sap_` 前缀 + 过期时间 | 替换了直接写 localStorage 的地方 |
+
+**🔑 核心原理**：localStorage 是同源（同协议+同域名+同端口）共享的，所以 scan.html 存的数据，report.html 能直接读。这就是静态网站跨页面传数据最简单的方法。
+
+---
+
+### 三、网络请求
+
+| 知识点 | 是什么 | 你在哪用的 |
+|--------|--------|-----------|
+| **fetch API** | 浏览器原生发 HTTP 请求的方法 | baseline-app.js 加载 `baseline.json`，队友 client.js 封装后端请求 |
+| **跨域（CORS）** | 浏览器安全策略，不同源不能互相请求，Flask-Cors 解决 | 队友后端加了 `CORS(app)` 让前端能请求 |
+| **AbortController + 超时** | 请求超时自动取消，避免前端卡死 | 队友 client.js 里 8 秒超时自动降级 |
+| **3 路径 fallback** | `data/x` → `../data/x` → `x` 试 3 次 | report-app.js 加载 demo JSON，兼容不同 Live Server 根目录 |
+
+**🔑 核心原理**：fetch 返回 Promise，`.ok` 判断 HTTP 状态码，`.json()` 解析响应体。队友的封装把这些都包好了，你只要 import 调函数。
+
+---
+
+### 四、数据可视化
+
+| 知识点 | 是什么 | 你在哪用的 |
+|--------|--------|-----------|
+| **Chart.js** | JS 图表库，CDN 引入直接用 | dashboard.html 的饼图 |
+| **实例复用模式** | 只 new 一次 Chart，后续只改 `.data` 再 `.update()` | 解决了"饼图晃一下消失"的 bug |
+| **Canvas 强制高度** | CSS 给 canvas 固定 height，别让它 auto | 防止饼图容器高度塌缩 |
+
+**🔑 核心原理**：每次 new Chart 会销毁旧实例 + 重绘 + 动画，如果数据频繁更新就会"晃"。正确做法是存一个全局变量 `chartInstance`，首次创建后只 update data。
+
+---
+
+### 五、Git 团队协作
+
+| 知识点 | 是什么 | 你在哪用的 |
+|--------|--------|-----------|
+| **git pull --rebase** | 先拉队友代码再 rebase 你的 commit，避免产生多余的 merge commit | 每次 push 前都先跑这个 |
+| **git add <特定文件>** | 只 add 你改的文件，队友的文件不会被你动 | 防止覆盖队友代码 |
+| **Connection was reset** | GitHub 网络问题，重试几次 / 换国内镜像 | 遇到过好几次 |
+| **git status** | 查看自己改了啥、哪些是 untracked | push 前必跑 |
+
+**🔑 核心原理**：Git 是分布式版本控制，每个人的电脑都有完整历史。push 只是把你的 commit 传到远端，**只会推送你 commit 进去的变化**，队友的文件原封不动。
+
+---
+
+### 六、后端基础（Flask）
+
+| 知识点 | 是什么 | 你在哪用的 |
+|--------|--------|-----------|
+| **Flask 应用工厂** | `create_app()` 函数创建 Flask 实例，方便测试 | 队友 app.py |
+| **Blueprint** | Flask 的"路由分包"，每个功能模块一个 Blueprint | auth_bp / reports_bp / scanner_bp |
+| **SQLite + SQLAlchemy** | 轻量数据库 + Python ORM，不用写 SQL 也能操作数据库 | 队友 models.py |
+| **后端自动降级** | 后端离线 → 前端改存 localStorage，用户无感知 | 队友 scan-page.js 的 `persistResult()` |
+
+**🔑 核心原理**：后端跑在端口 5000 上等请求，前端 fetch 过去拿到 JSON。后端停了就没人接请求，fetch 抛异常 → 队友 catch 里返回 `{ offline: true }` → 前端走降级逻辑。
+
+---
+
+### 七、Tailwind CSS
+
+| 知识点 | 是什么 | 你在哪用的 |
+|--------|--------|-----------|
+| **CDN 引入** | `<script src="https://cdn.tailwindcss.com">` | 所有页面，开发阶段用这个最快 |
+| **工具类** | `flex` / `bg-gray-800` / `rounded-lg` / `p-6` / `text-center` | 几乎所有页面的样式 |
+| **自定义 style** | Tailwind 加不了的（比如风险徽章发光）写在 `<style>` 里 | `.risk-high` / `.badge` 等 |
+
+**🔑 核心原理**：Tailwind 是"原子化 CSS"，每个 class 只做一件事。组合多个 class 快速搭 UI，不用写自己的 CSS 文件。
+
+---
+
+## ✅ 第二部分：我会了什么（技能清单）
+
+| # | 技能 | 熟练度 | 标志 |
+|---|------|--------|------|
+| 1 | HTML5 页面搭建 | ⭐⭐⭐ | 独立写完 scan.html / baseline.html / help.html |
+| 2 | CSS（Tailwind） | ⭐⭐⭐ | 能快速搭深色主题、卡片、表格、弹窗 |
+| 3 | ES6 模块 | ⭐⭐⭐ | 能正确 import/export、用 type="module" |
+| 4 | DOM 操作 | ⭐⭐⭐ | getElementById / addEventListener / innerHTML 熟练用 |
+| 5 | localStorage | ⭐⭐⭐ | 跨页面数据传递、JSON 序列化反序列化 |
+| 6 | fetch API | ⭐⭐⭐ | 加载 JSON、3 路径 fallback 兼容 |
+| 7 | Chart.js 饼图 | ⭐⭐ | 会实例复用、会改数据更新、会解决常见 bug |
+| 8 | Git 协作 | ⭐⭐⭐ | pull --rebase / add / commit / push 一条龙 |
+| 9 | 后端启动 | ⭐⭐ | 会装依赖、跑 Flask、会看后端状态 |
+| 10 | 团队对接 | ⭐⭐⭐ | 能读懂队友代码、按 DOM 边界配合、不碰队友的 ID |
+| 11 | 错误排查 | ⭐⭐⭐ | F12 Console、看报错信息、定位问题 |
+| 12 | 中文文档 | ⭐⭐⭐ | 补全 README、写学习总结 |
+
+---
+
+## 🎯 第三部分：项目整体架构（你做了什么）
+
+```
+┌─────────────────────────────────────────────────────┐
+│                    浏览器（前端）                       │
+│                                                      │
+│  scan.html ──app.js──→ scan.js ──→ localStorage     │
+│      │                                               │
+│      ├── 扫描完发 scan:complete 事件                    │
+│      │                                               │
+│      ├── dashboard.html ← 监听事件 ← dashboard-app.js│
+│      │                    Chart.js 饼图 + 数字卡片     │
+│      │                                               │
+│      ├── report.html ← 读 localStorage ← report-app.js│
+│      │                 5 区块报告 + 打印               │
+│      │                                               │
+│      └── baseline.html ← fetch JSON ← baseline-app.js│
+│                        按类别分组 + 搜索               │
+│                                                      │
+└─────────────────────────────────────────────────────┘
+                          │ fetch
+                          ↓
+┌─────────────────────────────────────────────────────┐
+│              Flask 后端（队友 C 写的）                 │
+│              port 5000 → SQLite 数据库                │
+│  /api/auth/*   注册/登录                              │
+│  /api/reports/* 报告存取                              │
+│  /api/ping     探活（前端用来判断后端在不在）            │
+└─────────────────────────────────────────────────────┘
+```
+
+---
+
+## 📝 第四部分：学习周报
+
+### 📅 本周目标
+和队友组队完成科协大作业——安全审计模拟静态网站，负责审计任务页、报告页、仪表盘、基线库 4 个前端页面。
+
+---
+
+### ✅ 完成情况
+
+| 任务 | 状态 | 备注 |
+|------|------|------|
+| 审计任务页全流程 | ✅ | 文件上传 → 扫描 → 表格渲染 → 存储 |
+| 审计报告页 | ✅ | 5 区块渲染 + 打印支持 |
+| 仪表盘 | ✅ | 数字卡片 + Chart.js 饼图（修复晃一下消失的 bug） |
+| 安全基线库 | ✅ | 12 条基线 + fetch JSON + 搜索过滤 |
+| 队友 scan-page.js 对接 | ✅ | scan.html 补齐 20+ DOM ID |
+| Flask 后端跑通 | ✅ | 装依赖 → python app.py → api/ping 返回 pong |
+| Git 协作 push/pull | ✅ | 多次 pull rebase + push，没覆盖队友代码 |
+| README 文档 | ✅ | 补全所有"待确认"项，对齐实际代码 |
+| help.html 团队信息 | ✅ | 添加三位成员名字 + 表情 |
+
+---
+
+### 🐛 反复踩坑本
+
+| # | 错在哪 | 原因 | 正确做法 |
+|---|--------|------|---------|
+| 1 | 饼图晃一下消失 | 每次 update 都重新 new Chart 实例 | 只 new 一次存全局变量，后续只改 data + `.update()` |
+| 2 | scan 页面 import 语法报错 | `<script>` 没加 `type="module"` | 所有用 import/export 的 JS 都必须加 |
+| 3 | 报告页没内容 | localStorage 可能是空的（用户没扫过） | 加 demo JSON fallback，3 路径兼容 |
+| 4 | Git push 被拒 | 队友先 push 了，你落后了 | 先 `git pull --rebase origin main` 再 push |
+| 5 | 基线库 fetch 找不到文件 | Live Server 根目录不确定 | 试 3 个路径：`data/x` → `../data/x` → `x` |
+| 6 | 中文引号嵌套语法错误 | 字符串里用了中文引号 `"xxx"xxx"` | 改用英文引号 + 转义 |
+| 7 | CSS 类名写成 `.risk-badge` 但队友写 `.risk-high` | 命名没对齐 | README 里写清楚"队友的 LEVEL_CLASS 对应三个" |
+| 8 | pip install 慢到报错 | 用的国外源 | 换清华源 `-i https://pypi.tuna.tsinghua.edu.cn/simple` |
+| 9 | 忘了后端要一直跑 | 不知道后端是常驻进程 | 启动后端后终端别关，Ctrl+C 才会停 |
+| 10 | 以为 Git push 会覆盖队友代码 | 不理解 Git 增量式工作原理 | 只 `git add` 自己改的文件，队友的文件不动 |
+
+---
+
+### 🔑 本周重点（必须记住的）
+
+1. **ES6 Module 三件套**：`import` + `export` + `type="module"`，缺一不可
+2. **localStorage 存对象**：`JSON.stringify()` 存，`JSON.parse()` 取
+3. **Git 安全 push**：`status` → `pull --rebase` → `add 特定文件` → `commit` → `push`
+4. **后端对接前提**：后端必须在跑（`python app.py` 终端别关），前端才能 fetch 成功
+5. **队友代码边界**：队友用 `getElementById('xxx')` 绑的 ID，一个都不能改！
+6. **降级思维**：后端离线 → 前端存 localStorage；JSON 找不到 → 用 demo 数据；ES Module 不行 → 试传统 script
+
+---
+
+### 💡 下周可以做的事
+
+- 给页面加动效（按钮 hover、卡片阴影、深色主题渐变）
+- 多测几组漏洞样例，补全漏洞库
+- 完善 README 剩余部分（API 接口清单、测试记录）
+- 学习 CSS Grid 布局、Vue/React 框架（为下次项目铺垫）
+
+---
+
+### 🎉 收获总结
+
+> 从 0 到 1 跟着 AI 和队友完成了一个**能跑通、能登录、能存数据**的全栈项目。
+> 
+> **最大的收获不是写了多少 HTML/CSS，而是学会了「和队友协作」这件事——不抢队友的活、不碰队友的边界、出现问题先排查自己再问队友。** 这比任何技术都有用。
+> 
+> 另外知道了"后端跑起来是什么意思"、"跨域是啥"、"Git 为什么要 pull rebase"——这些上课不会讲，但真实开发里天天遇到。
+> 
+> 大一能跑通一个 Flask + 静态前端 + Git 协作的完整项目，简历上能写，面试能讲。冲！🚀
+
+---
+
+**祝你明天一切顺利！有问题随时找我！** ✨
